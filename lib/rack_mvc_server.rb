@@ -20,9 +20,7 @@ forward the reaponse to the xlient
 #   puts lines.grep(/\s*run/)[0].gsub("run\s","")
 # end
 module RackMvcServer
-
   module Utils
-
     def setup_env(request)
       env = Hash.new
       get = request[0].split("\n").first
@@ -30,12 +28,10 @@ module RackMvcServer
       env['PATH_INFO']=$1
       env
     end
-
     def ignore_request?(env)
-      env["PATH_INFO"]=="/favicon.ico/" ||
-          env["PATH_INFO"] == "Favicon.icoController"
+      env["PATH_INFO"]=~ /^\/favicon.ico/ ||
+          env["PATH_INFO"] =~ /^\/Favicon.icoController/
     end
-
     def load_app
       #add loading from config.ru
       File.open("config.ru", "r") do |f|
@@ -66,23 +62,38 @@ module RackMvcServer
       puts "initializing"
       load_app
     end
-
     def init
       #create preforking model
       # read, write = UNIXServer.new("/tmp.domain_sock")
       Socket.tcp_server_loop(8080) do |connection|
-        request  = connection.recvmsg
+        request = connection.recvmsg
         env = setup_env(request)
-        # binding.pry
-        response = @application.call(env) unless ignore_request?(env)
+        if ignore_request?(env)
+          send_response_to_client(connection, [200, {}, []])
+        else
+          response = @application.call(env)
+          send_response_to_client(connection, response)
+        end
+        connection.close
+      end
+    end
+    def send_response_to_client(connection, response)
+      if response.kind_of?Array
         connection.puts "HTTP/1.1 #{response[0]}\n"
         response[1].each do |k,v|
           connection.puts "#{k}: #{v} \n"
         end
-        response[2].body.each do |body|
+        response[2].each do |body|
           connection.puts("\n#{body}")
         end
-        connection.close
+      else
+        connection.puts "HTTP/1.1 #{response.status}\n"
+        response.headers.each do |k,v|
+          connection.puts "#{k}: #{v} \n"
+        end
+        response.body.each do |body|
+          connection.puts("\n#{body}")
+        end
       end
     end
   end
