@@ -20,6 +20,7 @@ forward the reaponse to the xlient
 #   puts lines.grep(/\s*run/)[0].gsub("run\s","")
 # end
 module RackMvcServer
+
   module Utils
     def setup_env(request)
       env = Hash.new
@@ -32,23 +33,24 @@ module RackMvcServer
       env["PATH_INFO"]=~ /^\/favicon.ico/ ||
           env["PATH_INFO"] =~ /^\/Favicon.icoController/
     end
+  end
+
+  module Appload
     def load_app
       #add loading from config.ru
       File.open("config.ru", "r") do |f|
-        config = f.readlines
-
-        #require_relative
-        reqs = config.find_all { |line| line[/^require_relative /] }
-        reqs.each do |req|
-          req = "require  '"+Dir.pwd+"/"+req.split[1][1..-2]+"'"
-          eval(req)
-          # require_relative Dir.pwd+'/config/application'
-          # @application = Blog::Application.new.method(:call).to_proc
-        end
-        #run Blog::Application.new
-        run = config.find {|line| line[/^run /]}
-        @application = eval(run.split[1]).method(:call).to_proc
+        instance_eval  f.read, f.path
       end
+    end
+    def map(path)
+      puts ".....map NOT IMPLEMENTED YET..."
+    end
+    def run(obj)
+      @application = obj.method(:call).to_proc
+    end
+    def require_relative(str)
+      req = "require '"+Dir.pwd+"/"+str+"'"
+      eval(req)
     end
   end
 
@@ -57,26 +59,33 @@ module RackMvcServer
     require 'yaml'
     require 'net/http'
     include Utils
+    include Appload
 
     def initialize
-      puts "initializing"
+      puts "initializing ..."
       load_app
+      puts "app loaded ...."
     end
     def init
       #create preforking model
       # read, write = UNIXServer.new("/tmp.domain_sock")
       Socket.tcp_server_loop(8080) do |connection|
-        request = connection.recvmsg
-        env = setup_env(request)
-        if ignore_request?(env)
-          send_response_to_client(connection, [200, {}, []])
-        else
-          response = @application.call(env)
-          send_response_to_client(connection, response)
-        end
-        connection.close
+        # binding.pry
+        # fork do
+          request = connection.recvmsg
+          env = setup_env(request)
+          if ignore_request?(env)
+            send_response_to_client(connection, [200, {}, []])
+          else
+            response = @application.call(env)
+            send_response_to_client(connection, response)
+          end
+          connection.close
+        # end
       end
     end
+
+    private
     def send_response_to_client(connection, response)
       if response.kind_of?Array
         connection.puts "HTTP/1.1 #{response[0]}\n"
@@ -97,6 +106,6 @@ module RackMvcServer
       end
     end
   end
-
   Master.new.init
+
 end
