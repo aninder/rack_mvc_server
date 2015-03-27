@@ -13,11 +13,17 @@ module RackMvcServer
     end
     def start
       $PROGRAM_NAME = "mvc server worker #{@number}"
+      master_handler = trap('INT') {
+        @logger.info "received INT exiting...."
+        @socket.close
+        exit(0)
+      }
       while @master_pid == Process.ppid do
         #  select() and poll() tell us whether an I/O operation would not block,
         # rather than whether it would successfully transfer data.
         #
-        # if Incoming connection established on listening socket, then reading socket returns
+        # if Incoming connection established on socket, then socket desciptor in the
+        # reading queue returns
         # reading socket also returns when some input is available
         new_connection = IO.select([@socket], nil, nil, WORKER_MAX_TIME_ON_CLIENT_REQUEST / 2)
         # @logger.info "select returned  #{new_connection}"
@@ -38,6 +44,8 @@ module RackMvcServer
         end
         FileUtils.touch @register
       end
+      @logger.info "master has died , so exiting"
+      @socket.close rescue nil
     end
     def ==(other_number)
       @number == other_number
