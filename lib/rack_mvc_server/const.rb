@@ -7,7 +7,8 @@ module RackMvcServer
       # default TCP listen port (8080)
       DEFAULT_PORT = 8080
       DAEMONIZE = false
-
+      WORKERS = 2
+      WORKER_MAX_TIME_ON_CLIENT_REQUEST = 20
       # common errors
       ERROR_400_RESPONSE = "HTTP/1.1 400 Bad Request\r\n\r\n"
       ERROR_414_RESPONSE = "HTTP/1.1 414 Request-URI Too Long\r\n\r\n"
