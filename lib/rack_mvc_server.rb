@@ -1,15 +1,3 @@
-# require "rack_mvc_server/version"
-=begin
-load the app
-  read config.ru
-  class eval the load the paths
-  read the Gemfile , require all the gems
-  find run command and load the objext and send the call message to it
-make a listener socket
-prefork worker threads
-forward tje connection to the app by calling it's call method
-forward the reaponse to the xlient
-=end
 # $LOAD_PATH << temp
 # File.open("#{temp}/config.ru","r") do |f|
 #   lines = f.readlines
@@ -22,22 +10,19 @@ forward the reaponse to the xlient
 module RackMvcServer
 
   module Utils
-    def setup_env(request)
+    def setup_env(sock_message)
       env = Hash.new
-      get = request[0].split("\n").first
+      get = sock_message[0].split("\n").first
       get.match("GET ([^ ]+).*$")
       env['PATH_INFO']=$1
-      env
-    end
-    def ignore_request?(env)
-      env["PATH_INFO"]=~ /^\/favicon.ico/ ||
-          env["PATH_INFO"] =~ /^\/Favicon.icoController/
+      return env
     end
   end
 
   module Appload
-    def load_app
-      #add loading from config.ru
+
+    def load_app(config)
+      raise ArgumentError, "rackup file (#{config}) not readable" if ! File.readable?(config)
       File.open("config.ru", "r") do |f|
         instance_eval  f.read, f.path
       end
@@ -58,30 +43,31 @@ module RackMvcServer
     require 'socket'
     require 'yaml'
     require 'net/http'
+    require 'rack_mvc_server/const'
     include Utils
     include Appload
-
+    include RackMvcServer::Const
+    
     def initialize
-      puts "initializing ..."
-      load_app
-      puts "app loaded ...."
+      $stderr.sync = $stdout.sync = true
+      setup_logging
+      logger.info "initializing ..."
+      load_app("config.ru")
+      logger.info "app loaded ...."
     end
     def init
       #create preforking model
       # read, write = UNIXServer.new("/tmp.domain_sock")
-      Socket.tcp_server_loop(8080) do |connection|
-        # binding.pry
-        # fork do
-          request = connection.recvmsg
-          env = setup_env(request)
-          if ignore_request?(env)
-            send_response_to_client(connection, [200, {}, []])
-          else
-            response = @application.call(env)
-            send_response_to_client(connection, response)
-          end
-          connection.close
-        # end
+      Socket.tcp_server_loop(DEFAULT_PORT) do |socket|
+        begin
+          # binding.pry
+          # fork do
+            env = setup_env(socket.recvmsg)
+              response = @application.call(env)
+              send_response_to_client(socket, response)
+        ensure
+          socket.close
+        end
       end
     end
 
@@ -105,6 +91,22 @@ module RackMvcServer
         end
       end
     end
+
+    def setup_logging
+      logger.datetime_format = "%Y-%m-%d %H:%M:%S"
+      logger.formatter = proc do |severity, datetime, progname, msg|
+        "[#{$PROGRAM_NAME} (PID: #{Process.pid})] #{severity} -- #{msg}\n"
+      end
+    end
+
+    def logger
+      if DAEMONIZE
+        @logger ||= Logger.new("server.log")
+      else
+        @logger ||= Logger.new(STDOUT)
+      end
+    end
+
   end
   Master.new.init
 
