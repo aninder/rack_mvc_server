@@ -72,7 +72,7 @@ module RackMvcServer
             remove_dead_workers
             sleep 2
           when :QUIT, :INT
-            logger.info 'handling INT'
+            logger.info "handling #{signal}"
             kill_each_worker :KILL
             remove_dead_workers
             # When a process terminates(program control flow crosses
@@ -85,13 +85,13 @@ module RackMvcServer
           when :TTIN, :TTOU
             logger.info "add fun by increasing or decreasing num of workers"
           when :CHLD
-            logger.info "oh dear worker , wot u die for ;)"
+            logger.info "oh dear worker , wot u die for ?!"
           else
             logger.info "dummy handle #{signal}"
         end
       end
       logger.info "bye bye from master"
-      exit 42
+      exit 0
     end
 
     private
@@ -174,7 +174,9 @@ module RackMvcServer
       @logger || DAEMONIZE ?  @logger ||= MonoLogger.new("server.log") : @logger ||= MonoLogger.new(STDOUT)
     end
   end
-  fork {
+
+  pp = fork {
   Master.new.start
   }
+  Process.detach pp
 end
