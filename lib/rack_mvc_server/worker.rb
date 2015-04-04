@@ -1,7 +1,6 @@
 require 'fileutils'
 module RackMvcServer
   class Worker
-    include RackMvcServer::Const
     attr_reader :register, :number
     def initialize(master_pid, application, socket, register, number,logger)
       @master_pid = master_pid
@@ -26,9 +25,9 @@ module RackMvcServer
         # reading queue returns
         # reading socket also returns when some input is available
         new_connection = IO.select([@socket], nil, nil, WORKER_MAX_TIME_ON_CLIENT_REQUEST / 2)
-        # @logger.info "select returned  #{new_connection}"
-        FileUtils.touch @register
+        @logger.info "select returned  #{new_connection}"
         if new_connection
+          FileUtils.touch @register
           begin
           #if there's nothing in the queue then accept would block.
           # In this situation accept_nonblock would raise an Errno::EAGAIN rather

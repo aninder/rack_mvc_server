@@ -1,12 +1,3 @@
-# $LOAD_PATH << temp
-# File.open("#{temp}/config.ru","r") do |f|
-#   lines = f.readlines
-#   lines.grep(/^require/).each do |req|
-#    require req.gsub(/(.*)\"(.+)\"/,temp+'\2.rb')
-#    #    eval req
-#   end
-#   puts lines.grep(/\s*run/)[0].gsub("run\s","")
-# end
 module RackMvcServer
   module Utils
     def setup_env(sock_message)
@@ -44,7 +35,6 @@ module RackMvcServer
     require 'mono_logger'
     include Utils
     include Appload
-    include RackMvcServer::Const
 
     SIGNALS = [:WINCH, :QUIT, :INT, :TERM, :USR1, :USR2, :HUP, :TTIN, :TTOU, :CHLD]
 
@@ -62,7 +52,7 @@ module RackMvcServer
       @signal_queue = []
       setup_signals
       #create preforking model
-      logger.info("Spawning #{WORKERS} workers")
+      logger.info("starting work with #{WORKERS} workers")
       loop do
         signal = @signal_queue.shift
         case signal
@@ -134,12 +124,12 @@ module RackMvcServer
       loop do
         # wait non block
         pid, status = Process.wait2(-1, Process::WNOHANG) || break
-        worker = @workers.delete(pid)
         begin
+          worker = @workers.delete(pid)
           worker.register.close
           worker.register.unlink
         rescue
-          logger.warn "prob while cleaning tempfile"
+          logger.warn "prob removing dead  worker"
         end
         logger.info "cleaned up dead worker #{worker.number} " \
                   "(PID:#{pid}) " \
@@ -171,12 +161,18 @@ module RackMvcServer
       end
     end
     def logger
-      @logger || DAEMONIZE ?  @logger ||= MonoLogger.new("server.log") : @logger ||= MonoLogger.new(STDOUT)
+      @logger || DAEMONIZE ?  @logger = MonoLogger.new("server.log") : @logger = MonoLogger.new(STDOUT)
     end
   end
-
-  pp = fork {
-  Master.new.start
-  }
-  Process.detach pp
+  if DAEMONIZE
+    pp = fork {
+    Master.new.start
+    }
+    Process.daemon pp
+    else
+      pp = fork {
+        Master.new.start
+      }
+      Process.detach pp
+  end
 end
