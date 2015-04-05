@@ -1,3 +1,4 @@
+require 'rack'
 module RackMvcServer
   module Utils
     def setup_env(sock_message)
@@ -9,21 +10,13 @@ module RackMvcServer
     end
   end
   module Appload
-    def load_app(config)
-      raise ArgumentError, "rackup file (#{config}) not readable" if ! File.readable?(config)
-      File.open("config.ru", "r") do |f|
-        instance_eval  f.read, f.path
-      end
-    end
-    def map(path)
-      puts ".....map NOT IMPLEMENTED YET..."
-    end
-    def run(obj)
-      @application = obj.method(:call).to_proc
-    end
-    def require_relative(str)
-      req = "require '"+Dir.pwd+"/"+str+"'"
-      eval(req)
+    def load_app(ru_file)
+      raise ArgumentError, "rackup file (#{ru_file}) not readable" if ! File.readable?(ru_file)
+      app, _ = Rack::Builder.parse_file(ru_file)
+      Rack::Builder.new do
+        use Rack::ContentLength
+        run app
+      end.to_app
     end
   end
   class Master
@@ -44,7 +37,7 @@ module RackMvcServer
       logger.info "initializing ..."
       $PROGRAM_NAME = "mvc server master"
       @workers = {}
-      load_app("config.ru")
+      @application = load_app("config.ru")
       @socket = TCPServer.open(DEFAULT_HOST, DEFAULT_PORT)
       logger.info("Listening on #{DEFAULT_HOST}: #{DEFAULT_PORT}, Super Master pid  #{Process.ppid}")
     end
@@ -161,7 +154,7 @@ module RackMvcServer
       end
     end
     def logger
-      @logger || DAEMONIZE ?  @logger = MonoLogger.new("server.log") : @logger = MonoLogger.new(STDOUT)
+      @logger || (DAEMONIZE ?  @logger = MonoLogger.new("server.log") : @logger = MonoLogger.new(STDOUT))
     end
   end
   if DAEMONIZE
@@ -169,7 +162,7 @@ module RackMvcServer
     Master.new.start
     }
     Process.daemon pp
-    else
+  else
       pp = fork {
         Master.new.start
       }
