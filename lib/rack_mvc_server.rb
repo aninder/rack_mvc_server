@@ -29,15 +29,46 @@ module RackMvcServer
     include Utils
     include Appload
 
-    SIGNALS = [:WINCH, :QUIT, :INT, :TERM, :USR1, :USR2, :HUP, :TTIN, :TTOU, :CHLD]
+    # Signal     Value     Action   Comment
+    # ----------------------------------------------------------------------
+    # SIGHUP        1       Term    Hangup detected on controlling terminal or death of controlling process
+    # SIGINT        2       Term    Interrupt from keyboard
+    # SIGQUIT       3       Core    Quit from keyboard
+    # SIGILL        4       Core    Illegal Instruction
+    # SIGABRT       6       Core    Abort signal from abort(3)
+    # SIGFPE        8       Core    Floating point exception
+    # SIGKILL       9       Term    Kill signal
+    # SIGSEGV      11       Core    Invalid memory reference
+    # SIGPIPE      13       Term    Broken pipe: write to pipe with no readers
+    # SIGALRM      14       Term    Timer signal from alarm(2)
+    # SIGTERM      15       Term    Termination signal
+    # SIGUSR1   30,10,16    Term    User-defined signal 1
+    # SIGUSR2   31,12,17    Term    User-defined signal 2
+    # SIGCHLD   20,17,18    Ign     Child stopped or terminated
+    # SIGCONT   19,18,25    Cont    Continue if stopped
+    # SIGSTOP   17,19,23    Stop    Stop process
+    # SIGTSTP   18,20,24    Stop    Stop typed at tty
+    # SIGTTIN   21,21,26    Stop    tty input for background process
+    # SIGTTOU   22,22,27    Stop    tty output for background process
+    # SIGWINCH                      "Window" change handler
+    # SIGWIND                       Window" change handler
+
+
+    SIGNALS = [:WINCH, :QUIT, :INT, :TERM, :USR1, :USR2,
+               :HUP, :TTIN, :TTOU, :CHLD, :GILL, :ABRT,
+               :FPE, :SEGV, :PIPE, :ALRM, :CONT, :STOP,
+               :STP
+    ]
 
     def initialize
       setup_logging
       logger.level = MonoLogger::DEBUG
       logger.info "initializing ..."
+      at_exit { logger.info "hello from at_exit handler"}
       $PROGRAM_NAME = "mvc server master"
       @workers = {}
       @application = load_app("config.ru")
+      BasicSocket.do_not_reverse_lookup = true
       @socket = TCPServer.open(DEFAULT_HOST, DEFAULT_PORT)
       logger.info("Listening on #{DEFAULT_HOST}: #{DEFAULT_PORT}, Super Master pid  #{Process.ppid}")
     end
@@ -80,8 +111,8 @@ module RackMvcServer
     private
     # signals are asynchronous, process has to leave everything and run the
     # signal handler first(like wake up if it's in sleep state n run the handler)
-    # if the process is running signal handler and another signal comes , than it stacks off
-    # to run the handler of the latest signal;
+    # if the process is running signal handler and another signal comes , than the
+    # kernel stacks off to run the handler of the latest signal;
     # The signals SIGKILL and SIGSTOP cannot be trapped, blocked, or ignored.
     def setup_signals
       SIGNALS.each do |signal|
@@ -132,7 +163,12 @@ module RackMvcServer
       logger.warn "no workers left ?!"
     end
     def kill_worker(signal, pid)
-      Process.kill(signal, pid)
+        # _signal_ may be an
+        # integer signal number or a POSIX signal name (either with or without
+        # a +SIG+ prefix). If _signal_ is negative (or starts
+        # with a minus sign),kernel sends the signal to process groups instead of
+        # processes.
+        Process.kill(signal, pid)
       # ESRCH --> process doesn’t exist.
     rescue Errno::ESRCH
       logger.info "worker #{pid} not exists, did not receive signal"
