@@ -34,11 +34,11 @@ module RackMvcServer
     # SIGHUP        1       Term    Hangup detected on controlling terminal or death of controlling process
     # SIGINT        2       Term    Interrupt from keyboard
     # SIGQUIT       3       Core    Quit from keyboard
-    # SIGILL        4       Core    Illegal Instruction
+    # SIGILL        4       Core    Illegal Instruction                            ##cannot trap
     # SIGABRT       6       Core    Abort signal from abort(3)
-    # SIGFPE        8       Core    Floating point exception
+    # SIGFPE        8       Core    Floating point exception                       ##cannot trap
     # SIGKILL       9       Term    Kill signal
-    # SIGSEGV      11       Core    Invalid memory reference
+    # SIGSEGV      11       Core    Invalid memory reference                       ##cannot trap
     # SIGPIPE      13       Term    Broken pipe: write to pipe with no readers
     # SIGALRM      14       Term    Timer signal from alarm(2)
     # SIGTERM      15       Term    Termination signal
@@ -55,28 +55,27 @@ module RackMvcServer
 
 
     SIGNALS = [:WINCH, :QUIT, :INT, :TERM, :USR1, :USR2,
-               :HUP, :TTIN, :TTOU, :CHLD, :GILL, :ABRT,
-               :FPE, :SEGV, :PIPE, :ALRM, :CONT, :STOP,
-               :STP
-    ]
+               :HUP, :TTIN, :TTOU, :CHLD, :ABRT, :TSTP,
+               :PIPE, :ALRM, :CONT ]
+
 
     def initialize
       setup_logging
       logger.level = MonoLogger::DEBUG
-      logger.info "initializing ..."
-      at_exit { logger.info "hello from at_exit handler"}
+      logger.debug "initializing ..."
+      at_exit { logger.debug "hello from at_exit handler"}
       $PROGRAM_NAME = "mvc server master"
       @workers = {}
       @application = load_app("config.ru")
       BasicSocket.do_not_reverse_lookup = true
       @socket = TCPServer.open(DEFAULT_HOST, DEFAULT_PORT)
-      logger.info("Listening on #{DEFAULT_HOST}: #{DEFAULT_PORT}, Super Master pid  #{Process.ppid}")
+      log.info("Listening on #{DEFAULT_HOST}: #{DEFAULT_PORT}, Super Master pid  #{Process.ppid}")
     end
     def start
       @signal_queue = []
       setup_signals
       #create preforking model
-      logger.info("starting work with #{WORKERS} workers")
+      logger.debug("starting work with #{WORKERS} workers")
       loop do
         signal = @signal_queue.shift
         case signal
@@ -86,26 +85,30 @@ module RackMvcServer
             remove_dead_workers
             sleep 2
           when :QUIT, :INT
-            logger.info "handling #{signal}"
+            logger.debug "handling #{signal}"
             kill_each_worker :KILL
             remove_dead_workers
             # When a process terminates(program control flow crosses
             # exit() or return from main) , all of its open files are
             # closed automatically by the kernel. Many programs
             # take advantage of this fact and don't explicitly
-            # close open files.
+            # close open files??
             @socket.close
             break
           when :TTIN, :TTOU
-            logger.info "add fun by increasing or decreasing num of workers"
+            logger.debug "add fun by increasing or decreasing num of workers"
           when :CHLD
-            logger.info "oh dear worker , wot u die for ?!"
+            logger.debug "oh dear worker , wot u die for ?!"
           else
-            logger.info "dummy handle #{signal}"
+            logger.debug "dummy handle #{signal}"
         end
       end
-      logger.info "bye bye from master"
+      logger.debug "bye bye from master"
       exit 0
+    end
+
+    def self.start(*args, &block)
+      new(*args, &block).start
     end
 
     private
@@ -117,7 +120,7 @@ module RackMvcServer
     def setup_signals
       SIGNALS.each do |signal|
         trap(signal) {
-          logger.info("got signal #{signal}")
+          logger.debug("got signal #{signal}")
           @signal_queue << signal
         }
       end
@@ -130,7 +133,7 @@ module RackMvcServer
         # It's possible to create copies of file descriptors using Socket#dup .
         # other n common way is through Process.fork
         pid = fork { worker.start }
-        logger.info "spawned  worker #{worker_number} with pid #{pid}"
+        logger.debug "spawned  worker #{worker_number} with pid #{pid}"
         @workers[pid] = worker
       end
     end
@@ -153,9 +156,9 @@ module RackMvcServer
           worker.register.close
           worker.register.unlink
         rescue
-          logger.warn "prob removing dead  worker"
+          logger.error "prob removing dead  worker"
         end
-        logger.info "cleaned up dead worker #{worker.number} " \
+        logger.debug "cleaned up dead worker #{worker.number} " \
                   "(PID:#{pid}) " \
                   "status: #{status.exitstatus}"
       end
@@ -171,7 +174,7 @@ module RackMvcServer
         Process.kill(signal, pid)
       # ESRCH --> process doesn’t exist.
     rescue Errno::ESRCH
-      logger.info "worker #{pid} not exists, did not receive signal"
+      logger.debug "worker #{pid} not exists, did not receive signal"
       worker = @workers.delete(pid) and worker.close rescue nil
     end
     def kill_each_worker(signal)
@@ -193,15 +196,5 @@ module RackMvcServer
       @logger || (DAEMONIZE ?  @logger = MonoLogger.new("server.log") : @logger = MonoLogger.new(STDOUT))
     end
   end
-  if DAEMONIZE
-    pp = fork {
-    Master.new.start
-    }
-    Process.daemon pp
-  else
-      pp = fork {
-        Master.new.start
-      }
-      Process.detach pp
-  end
+  DAEMONIZE ? Process.daemon(fork {Master.start}) : Process.detach(fork{Master.start})
 end
